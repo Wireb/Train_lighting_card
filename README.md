@@ -19,3 +19,13 @@ WITH THE PRODUCT OR THE USE OR OTHER DEALINGS IN THE PRODUCT.
 ### What is it
 The current generation of controller card supports up to 11 normal LED channels plus one "special"  one that supports driving a bi-polar output. On the input side the controller will run off 6V to 60V AC or DC. (note I have NOT test this full range. I have tested 9Vac to 20Vac with no issues) It also has 4 opto-isolated inputs that will respond to ~3V to 32V AC or DC that can be used to pick one of 16 pre-programmed states. 
 
+Currently there are 7 selectable states:
+Headlights
+running lights
+left turn
+right turn
+break lights
+reverse lights
+light bar flashers 
+
+via the programing button any state, combination of states, or none can be chosen for each of the 16 combinations of inputs. 
