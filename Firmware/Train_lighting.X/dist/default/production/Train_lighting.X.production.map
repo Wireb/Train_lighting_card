@@ -1,0 +1,85 @@
+MPLINK 5.08, LINKER
+Linker Map File - Created Wed Jul 20 22:49:53 2016
+
+                                 Section Info
+                  Section       Type    Address   Location Size(Bytes)
+                ---------  ---------  ---------  ---------  ---------
+                   .org_1       code   0x000000    program   0x000002
+                   .cinit    romdata   0x000001    program   0x000004
+                   .org_2       code   0x000004    program   0x00025a
+.config_8007_BUILD/DEFAULT/PRODUCTION/TRAIN_L       code   0x008007    program   0x000002
+.config_8008_BUILD/DEFAULT/PRODUCTION/TRAIN_L       code   0x008008    program   0x000002
+.config_8009_BUILD/DEFAULT/PRODUCTION/TRAIN_L       code   0x008009    program   0x000002
+.config_800A_BUILD/DEFAULT/PRODUCTION/TRAIN_L       code   0x00800a    program   0x000002
+                   .org_0       code   0x00f000    program   0x000020
+
+
+
+                              Program Memory Usage 
+                               Start         End      
+                           ---------   ---------      
+                            0x000000    0x000002      
+                            0x000004    0x000130      
+                            0x008007    0x00800a      
+                            0x00f000    0x00f00f      
+            324 out of 4361 program addresses used, program memory utilization is 7%
+
+
+
+                              Symbols - Sorted by Name
+                     Name    Address   Location    Storage File                     
+                ---------  ---------  ---------  --------- ---------                
+         EEPROM_NO_UPDATE   0x00002d    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+         EEPROM_READ_LOOP   0x0000af    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+            EEPROM_UPDATE   0x000012    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                  ENDLOOP   0x000103    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                      IRQ   0x000005    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                 MAINLOOP   0x0000b5    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                 NOT_INIT   0x0000c7    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                    START   0x000053    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+            UPDATE_STATES   0x0000d4    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+   WRITE_EEPROM_DATA_LOOP   0x00001c    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+        WRITE_EEPROM_LOOP   0x000025    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+              backup_done   0x0000f8    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+              button_done   0x0000d0    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+      button_done_pressed   0x0000cf    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+            flasher_irq_2   0x000050    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+        flashers_irq_done   0x000052    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+   flashers_left_irq_done   0x00003a    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+  flashers_left_irq_other   0x000036    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+  flashers_right_irq_done   0x000047    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+ flashers_right_irq_other   0x000043    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+           headlight_done   0x0000e5    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                 run_done   0x0000f2    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                stop_done   0x000102    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+
+
+
+                              Symbols - Sorted by Address
+                     Name    Address   Location    Storage File                     
+                ---------  ---------  ---------  --------- ---------                
+                      IRQ   0x000005    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+            EEPROM_UPDATE   0x000012    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+   WRITE_EEPROM_DATA_LOOP   0x00001c    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+        WRITE_EEPROM_LOOP   0x000025    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+         EEPROM_NO_UPDATE   0x00002d    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+  flashers_left_irq_other   0x000036    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+   flashers_left_irq_done   0x00003a    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+ flashers_right_irq_other   0x000043    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+  flashers_right_irq_done   0x000047    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+            flasher_irq_2   0x000050    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+        flashers_irq_done   0x000052    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                    START   0x000053    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+         EEPROM_READ_LOOP   0x0000af    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                 MAINLOOP   0x0000b5    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                 NOT_INIT   0x0000c7    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+      button_done_pressed   0x0000cf    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+              button_done   0x0000d0    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+            UPDATE_STATES   0x0000d4    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+           headlight_done   0x0000e5    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                 run_done   0x0000f2    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+              backup_done   0x0000f8    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                stop_done   0x000102    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+                  ENDLOOP   0x000103    program     static D:\cam_offload_cache\mplab\Train_lighting\Train_lighting.X\Train_lighting.asm
+
+

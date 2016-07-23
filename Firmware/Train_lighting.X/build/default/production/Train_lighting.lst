@@ -1,0 +1,3004 @@
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE  1
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00001 ;#######################################################################################################
+                            ######################################
+                      00002 ;#Copyright (c) 2015 Peter Shabino
+                      00003 ;#
+                      00004 ;#Permission is hereby granted, free of charge, to any person obtaining a copy of this hardware, softwar
+                            e, and associated documentation files
+                      00005 ;#(the "Product"), to deal in the Product without restriction, including without limitation the rights t
+                            o use, copy, modify, merge, publish,
+                      00006 ;#distribute, sublicense, and/or sell copies of the Product, and to permit persons to whom the Product i
+                            s furnished to do so, subject to the
+                      00007 ;#following conditions:
+                      00008 ;#
+                      00009 ;#The above copyright notice and this permission notice shall be included in all copies or substantial p
+                            ortions of the Product.
+                      00010 ;#
+                      00011 ;#THE PRODUCT IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT L
+                            IMITED TO THE WARRANTIES OF
+                      00012 ;#MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS O
+                            R COPYRIGHT HOLDERS BE LIABLE
+                      00013 ;#FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISIN
+                            G FROM, OUT OF OR IN CONNECTION
+                      00014 ;#WITH THE PRODUCT OR THE USE OR OTHER DEALINGS IN THE PRODUCT.
+                      00015 ;#######################################################################################################
+                            ######################################
+                      00016 
+                      00017 ; This is the Train lighting micro code
+                      00018 ; 04DEC15 V00.00 PJS New
+                      00019 ; 10JUN16 V00.01 PJS Added support for flashers, turn signal blinking, state inputs and started eeprom s
+                            upport
+                      00020 ; 15JUL16 V00.02 PJS Started EEPROM support. 
+                      00021 
+  00000000            00022 VerHigh     equ     0x00
+  00000002            00023 VerLow      equ     0x02
+                      00024 #define CODE_VER_STRING "Peter Shabino 15JUL2016 Train Lighting V00.02" ;Just in ROM
+                      00025 
+                      00026 ;****************************************************************************************
+                      00027 ; port list
+                      00028 ; Vss(20)[3]            GND
+                      00029 ; Vdd(1)[2]             +V
+                      00030 ; RA0(19)[4]            ICSPDAT, Headlight L
+                      00031 ; RA1(18)[5]            ICSPCLK, Headlight R
+                      00032 ; RA2(17)               Turn FL
+                      00033 ; RA3(4)[1]             Vpp/#MCLR, button
+                      00034 ; RA4(3)                input
+                      00035 ; RA5(2)                input
+                      00036 ; RB4(13)               backup L
+                      00037 ; RB5(12)               backup R
+                      00038 ; RB6(11)               stop L
+                      00039 ; RB7(10)               flasher A
+                      00040 ; RC0(16)               turn FR
+                      00041 ; RC1(15)               turn RL
+                      00042 ; RC2(14)               turn RR
+                      00043 ; RC3(7)                stop C
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE  2
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00044 ; RC4(6)                input
+                      00045 ; RC5(5)                input
+                      00046 ; RC6(8)                stop R
+                      00047 ; RC7(9)                flasher B
+                      00048 ;****************************************************************************************
+                      00049 
+                      00050 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00051 ; compiler configuration
+                      00052 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00053         ; set processor type and output file type (intel merged hex (.hex))
+                      00054         list    f=INHX8M
+                      00055         
+                      00056         ; PIC16F18344 Configuration Bit Settings
+                      00057         #include "p16F18344.inc"
+                      00001         LIST
+                      00002 
+                      00003 ;==========================================================================
+                      00004 ; Build date : May 15 2016
+                      00005 ;  MPASM PIC16F18344 processor include
+                      00006 ; 
+                      00007 ;  (c) Copyright 1999-2016 Microchip Technology, All rights reserved
+                      00008 ;==========================================================================
+                      00009 
+                      03413         LIST
+                      00058         ; CONFIG1
+                      00059         ; __config 0xFFEC
+8007   3FEC           00060          __CONFIG _CONFIG1, _FEXTOSC_OFF & _RSTOSC_HFINT1 & _CLKOUTEN_OFF & _CSWEN_ON & _FCMEN_ON
+                      00061         ; CONFIG2
+                      00062         ; __config 0xF7D0
+8008   37D0           00063          __CONFIG _CONFIG2, _MCLRE_OFF & _PWRTE_ON & _WDTE_OFF & _LPBOREN_ON & _BOREN_ON & _BORV_LOW & _
+                            PPS1WAY_OFF & _STVREN_ON & _DEBUG_OFF
+                      00064         ; CONFIG3
+                      00065         ; __config 0x3
+8009   1FFF           00066          __CONFIG _CONFIG3, _WRT_OFF & _LVP_OFF
+                      00067         ; CONFIG4
+                      00068         ; __config 0x3
+800A   3FFF           00069          __CONFIG _CONFIG4, _CP_OFF & _CPD_OFF
+                      00070 
+                      00071 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00072 ;constants
+                      00073 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00074 
+                      00075 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00076 ;variables (0x20 - 0x6F only), 0x0A0-0x0BF
+                      00077 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00078 ; bank 0  
+  00000020            00079 temp            equ         0x20
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE  3
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+  00000021            00080 last_state      equ         0x21
+  00000022            00081 blink_count     equ         0x22
+  00000023            00082 eeprom_update   equ         0x23
+  00000024            00083 button_bounce   equ         0x24
+  00000025            00084 init            equ         0x25
+                      00085 
+  00000000            00086 state_regs_H    equ         0x00
+  00000030            00087 state_regs_L    equ         0x30
+                      00088 ;               equ         0x31
+                      00089 ;               equ         0x32
+                      00090 ;               equ         0x33
+                      00091 ;               equ         0x34
+                      00092 ;               equ         0x35
+                      00093 ;               equ         0x36
+                      00094 ;               equ         0x37
+                      00095 ;               equ         0x38
+                      00096 ;               equ         0x39
+                      00097 ;               equ         0x3A
+                      00098 ;               equ         0x3B
+                      00099 ;               equ         0x3C
+                      00100 ;               equ         0x3D
+                      00101 ;               equ         0x3E
+                      00102 ;               equ         0x3F
+                      00103 
+                      00104 
+                      00105         
+                      00106 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00107 ;global variables (0x70 - 0x7F only)
+                      00108 ;-------------------------------------------------------------------------------------------------------
+                            ----
+  00000070            00109 global_temp     equ         0x70
+                      00110         
+                      00111 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00112 ;EEPROM data
+                      00113 ;   bit 0 = headlights
+                      00114 ;   bit 1 = running lights
+                      00115 ;   bit 2 = left turn
+                      00116 ;   bit 3 = right turn
+                      00117 ;   bit 4 = backup
+                      00118 ;   bit 5 = stop lights
+                      00119 ;   bit 6 = flashers
+                      00120 ; byte order input signals inverted. So all open would be the last value (right).
+                      00121 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00122         org     0xF000
+F000   0000 0000 0000 00123         de      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x40,0x20,0x10,0x08,0x04,0x03,0xFF
+       0000 0000 0000 
+       0000 0000 0000 
+       0040 0020 0010 
+       0008 0004 0003 
+       00FF 
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE  4
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00124 
+                      00125         
+                      00126         
+                      00127 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00128 ;put the following at address 0000h (starting vector)
+                      00129 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00130         org     0000h
+0000   2???           00131         goto    START               ; normal boot / reset vector
+                      00132 
+                      00133 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00134 ;put the following at address 0004h (IRQ vector)
+                      00135 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00136         org     0004h
+0004   2???           00137         goto    IRQ                 ; catch all IRQ not used
+                      00138         
+                      00139         
+                      00140         
+                      00141 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00142 ;interrup routine
+                      00143 ;-------------------------------------------------------------------------------------------------------
+                            ----
+0005                  00144 IRQ     
+                      00145         ; pic automaticly stores all critical data and disables the GIE
+0005   0020           00146         movlb   d'00'               ; make sure we are in bank 0
+                      00147         
+                      00148         ; todo if needed add check for multiple irqs here. 
+                      00149         
+0006   1290           00150         bcf     PIR0, TMR0IF        ; clear the irq 
+                      00151         
+0007   0AA2           00152         incf    blink_count, F      ; inc the blinker state
+                      00153         
+                      00154         ; button debounce code
+0008   1003           00155         bcf     STATUS, C
+0009   0CA4           00156         rrf     button_bounce, F
+                      00157         
+                      00158         ; eeprom update trigger
+000A   0823           00159         movf    eeprom_update, W
+000B   1903           00160         btfsc   STATUS, Z
+000C   2???           00161         goto    EEPROM_NO_UPDATE
+000D   3A01           00162         xorlw   0x01
+000E   1903           00163         btfsc   STATUS, Z
+000F   2???           00164         goto    EEPROM_UPDATE
+0010   03A3           00165         decf    eeprom_update, F
+0011   2???           00166         goto    EEPROM_NO_UPDATE
+                      00167 
+0012                  00168 EEPROM_UPDATE
+                      00169         ;-----------------
+                      00170         ; change banks
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE  5
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00171         ;-----------------
+0012   0031           00172         movlb   d'17'
+                      00173         ;-----------------
+                      00174         ; set address to the start of the eeprom space
+0013   3070           00175         movlw   0x70
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0014   0092           00176         movwf   NVMADRH
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0015   0191           00177         clrf    NVMADRL
+                      00178         ; set FSR0 to the start of the registers
+0016   3000           00179         movlw   state_regs_H
+0017   0085           00180         movwf   FSR0H
+0018   3030           00181         movlw   state_regs_L
+0019   0084           00182         movwf   FSR0L
+                      00183         
+001A   3010           00184         movlw   0x10
+001B   00F0           00185         movwf   global_temp
+001C                  00186 WRITE_EEPROM_DATA_LOOP  
+001C   0800           00187         movf    INDF0, W
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+001D   0093           00188         movwf   NVMDATL
+001E   3044           00189         movlw   0x44        ; pick EEPROM space and set WREN bit
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+001F   0095           00190         movwf   NVMCON1
+0020   3055           00191         movlw   0x55        ; required unlock seq
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0021   0096           00192         movwf   NVMCON2
+0022   30AA           00193         movlw   0xAA        ; required unlock seq
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0023   0096           00194         movwf   NVMCON2
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0024   1495           00195         bsf     NVMCON1, WR ; start the write
+0025                  00196 WRITE_EEPROM_LOOP
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0025   1895           00197         btfsc   NVMCON1, WR ; check if write is done
+0026   2???           00198         goto    WRITE_EEPROM_LOOP
+                      00199 
+                      00200         ; update to the next location
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0027   0A91           00201         incf    NVMADRL, F
+0028   0A84           00202         incf    FSR0L, F
+                      00203         
+                      00204         ; check if it is done yet
+0029   0BF0           00205         decfsz  global_temp, F
+002A   2???           00206         goto    WRITE_EEPROM_DATA_LOOP
+                      00207         
+                      00208         
+                      00209         ;-----------------
+                      00210         ; change banks
+                      00211         ;-----------------
+002B   0020           00212         movlb   d'00'
+                      00213         ;-----------------      
+                      00214         
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE  6
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00215         
+                      00216         ; clear the flag to indicate that no updates have happened. 
+002C   01A3           00217         clrf    eeprom_update
+002D                  00218 EEPROM_NO_UPDATE
+                      00219         
+                      00220 
+                      00221         
+002D   1D00           00222         btfss   INDF0, 2
+002E   2???           00223         goto    flashers_left_irq_done  
+002F   1E22           00224         btfss   blink_count, 4
+0030   2???           00225         goto    flashers_left_irq_other
+                      00226         ;-----------------
+                      00227         ; change banks
+                      00228         ;-----------------
+0031   0021           00229         movlb   d'01'
+                      00230         ;-----------------      
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0032   150C           00231         bsf     TRISA, 2    ; turn FL
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0033   148E           00232         bsf     TRISC, 1    ; turn RL
+                      00233         ;-----------------
+                      00234         ; change banks
+                      00235         ;-----------------
+0034   0020           00236         movlb   d'00'
+                      00237         ;-----------------
+0035   2???           00238         goto    flashers_left_irq_done  
+0036                  00239 flashers_left_irq_other
+                      00240         ;-----------------
+                      00241         ; change banks
+                      00242         ;-----------------
+0036   0021           00243         movlb   d'01'
+                      00244         ;-----------------      
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0037   110C           00245         bcf     TRISA, 2    ; turn FL
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0038   108E           00246         bcf     TRISC, 1    ; turn RL
+                      00247         ;-----------------
+                      00248         ; change banks
+                      00249         ;-----------------
+0039   0020           00250         movlb   d'00'
+                      00251         ;-----------------      
+003A                  00252 flashers_left_irq_done  
+                      00253 
+                      00254         
+003A   1D80           00255         btfss   INDF0, 3
+003B   2???           00256         goto    flashers_right_irq_done 
+003C   1E22           00257         btfss   blink_count, 4
+003D   2???           00258         goto    flashers_right_irq_other
+                      00259         ;-----------------
+                      00260         ; change banks
+                      00261         ;-----------------
+003E   0021           00262         movlb   d'01'
+                      00263         ;-----------------      
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE  7
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+003F   150E           00264         bsf     TRISC, 2    ; turn RR
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0040   140E           00265         bsf     TRISC, 0    ; turn FR
+                      00266         ;-----------------
+                      00267         ; change banks
+                      00268         ;-----------------
+0041   0020           00269         movlb   d'00'
+                      00270         ;-----------------
+0042   2???           00271         goto    flashers_right_irq_done 
+0043                  00272 flashers_right_irq_other
+                      00273         ;-----------------
+                      00274         ; change banks
+                      00275         ;-----------------
+0043   0021           00276         movlb   d'01'
+                      00277         ;-----------------      
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0044   110E           00278         bcf     TRISC, 2    ; turn RR
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0045   100E           00279         bcf     TRISC, 0    ; turn FR
+                      00280         ;-----------------
+                      00281         ; change banks
+                      00282         ;-----------------
+0046   0020           00283         movlb   d'00'
+                      00284         ;-----------------      
+0047                  00285 flashers_right_irq_done
+                      00286         
+                      00287         
+0047   1F00           00288         btfss   INDF0, 6
+0048   2???           00289         goto    flashers_irq_done
+0049   138D           00290         bcf     PORTB, 7
+004A   138E           00291         bcf     PORTC, 7
+004B   1D22           00292         btfss   blink_count, 2
+004C   2???           00293         goto    flasher_irq_2
+004D   1822           00294         btfsc   blink_count, 0
+004E   178E           00295         bsf     PORTC, 7
+004F   2???           00296         goto    flashers_irq_done
+0050                  00297 flasher_irq_2
+0050   1822           00298         btfsc   blink_count, 0
+0051   178D           00299         bsf     PORTB, 7        
+0052                  00300 flashers_irq_done               
+                      00301         
+0052   0009           00302         retfie                      ; return from IRQ
+                      00303 
+                      00304 ;-------------------------------------------------------------------------------------------------------
+                            ----
+                      00305 ; Start main code here
+                      00306 ;-------------------------------------------------------------------------------------------------------
+                            ----
+0053                  00307 START
+                      00308         ;-----------------
+                      00309         ; change banks
+                      00310         ;-----------------
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE  8
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0053   0020           00311         movlb   d'00'
+                      00312         ;-----------------
+0054   3003           00313         movlw   0x03
+0055   008C           00314         movwf   PORTA
+0056   018D           00315         clrf    PORTB
+0057   018E           00316         clrf    PORTC
+                      00317         
+                      00318 
+0058   01A5           00319         clrf    init
+0059   01A2           00320         clrf    blink_count
+005A   0184           00321         clrf    FSR0L
+005B   01A3           00322         clrf    eeprom_update
+005C   30FF           00323         movlw   0xFF
+005D   00A4           00324         movwf   button_bounce
+005E   00A1           00325         movwf   last_state
+                      00326 
+005F   3004           00327         movlw   0x04        ; enable timer no dividers 
+0060   009F           00328         movwf   T2CON
+0061   30FF           00329         movlw   0xFF        ; recycle every 256 counts
+0062   009E           00330         movwf   PR2
+                      00331         
+0063   0195           00332         clrf    TMR0L       ; timer 0 
+0064   30FF           00333         movlw   0xFF    
+0065   0096           00334         movwf   TMR0H
+0066   3090           00335         movlw   0x90        ; LFintosc clock source, no sync, 1:1 prescale
+0067   0098           00336         movwf   T0CON1
+0068   3087           00337         movlw   0x87        ; timer 0 on, 8 bit, 1:8 post scale
+0069   0097           00338         movwf   T0CON0
+                      00339 
+                      00340         ; set up ints
+006A   1290           00341         bcf     PIR0, TMR0IF
+                      00342         
+                      00343         
+                      00344         ;-----------------
+                      00345         ; change banks
+                      00346         ;-----------------
+006B   0021           00347         movlb   d'01'
+                      00348         ;-----------------              
+006C   30FF           00349         movlw   0xFF        ; make IO inputs (high) or output (low) 
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+006D   008C           00350         movwf   TRISA       ; 5,4,3 inputs 2 turn FL, 1 headlight R, 0 headlight L 
+006E   307F           00351         movlw   0x7F
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+006F   008D           00352         movwf   TRISB       ; 7 flasher A, 6 stop L, 5 backup R, 4 backup L
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0070   008E           00353         movwf   TRISC       ; 7 flasher B, 6 stop R, 5,6 inputs, 3 stop C, 2 turn RR, 1 turn RL, 0 turn 
+                            FR
+                      00354         
+                      00355         ; set up ints
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0071   1690           00356         bsf     PIE0, TMR0IE
+                      00357 
+                      00358         ;-----------------
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE  9
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00359         ; change banks
+                      00360         ;-----------------
+0072   0023           00361         movlb   d'03'
+                      00362         ;-----------------              
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0073   018C           00363         clrf    ANSELA
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0074   018D           00364         clrf    ANSELB
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0075   018E           00365         clrf    ANSELC
+                      00366         
+                      00367         ;-----------------
+                      00368         ; change banks
+                      00369         ;-----------------
+0076   003C           00370         movlb   d'28'
+                      00371         ;-----------------
+                      00372         ; unlock the perhiperal select
+0077   3055           00373         movlw   0x55
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0078   008F           00374         movwf   PPSLOCK
+0079   30AA           00375         movlw   0xAA
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+007A   008F           00376         movwf   PPSLOCK
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+007B   100F           00377         bcf     PPSLOCK,PPSLOCKED
+                      00378         
+                      00379         ;-----------------
+                      00380         ; change banks
+                      00381         ;-----------------
+007C   003D           00382         movlb   d'29'
+                      00383         ;-----------------
+007D   300C           00384         movlw   0x0C        ; set pins to CCP1
+                      00385         
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+007E   00A6           00386         movwf   RC6PPS      ; stop R
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+007F   00A3           00387         movwf   RC3PPS      ; stop C
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0080   009E           00388         movwf   RB6PPS      ; stop L
+                      00389 
+                      00390 ;       movwf   RA0PPS      ; headlight 
+                      00391 ;       movwf   RA1PPS      ; headlight 
+                      00392         
+0081   300D           00393         movlw   0x0D        ; set pins to CCP2
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0082   0092           00394         movwf   RA2PPS      ; turn FL
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0083   00A0           00395         movwf   RC0PPS      ; turn FR
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0084   00A1           00396         movwf   RC1PPS      ; turn RL
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0085   00A2           00397         movwf   RC2PPS      ; turn RR
+                      00398         
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 10
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00399         
+0086   300E           00400         movlw   0x0E        ; set pins to CCP1
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0087   009C           00401         movwf   RB4PPS      ; backup L
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0088   009D           00402         movwf   RB5PPS      ; backup R
+                      00403         
+                      00404         ;-----------------
+                      00405         ; change banks
+                      00406         ;-----------------
+0089   003C           00407         movlb   d'28'
+                      00408         ;-----------------
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+008A   140F           00409         bsf PPSLOCK,PPSLOCKED
+                      00410         
+                      00411         
+                      00412         ;-----------------
+                      00413         ; change banks
+                      00414         ;-----------------
+008B   0025           00415         movlb   d'5'
+                      00416         ;-----------------
+008C   309F           00417         movlw   0x9F        ; set up CCP1 to PWM and on
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+008D   0093           00418         movwf   CCP1CON
+008E   30FF           00419         movlw   0xFF
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+008F   0091           00420         movwf   CCPR1L
+0090   3020           00421         movlw   0x20
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0091   0092           00422         movwf   CCPR1H
+                      00423         
+0092   309F           00424         movlw   0x9F        ; set up CCP2 to PWM and on
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0093   0097           00425         movwf   CCP2CON
+0094   30FF           00426         movlw   0xFF
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0095   0095           00427         movwf   CCPR2L
+0096   3020           00428         movlw   0x20
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0097   0096           00429         movwf   CCPR2H
+                      00430 
+                      00431         ;-----------------
+                      00432         ; change banks
+                      00433         ;-----------------
+0098   0026           00434         movlb   d'6'
+                      00435         ;-----------------
+0099   309F           00436         movlw   0x9F        ; set up CCP3 to PWM and on
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+009A   0093           00437         movwf   CCP3CON
+009B   30FF           00438         movlw   0xFF
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+009C   0091           00439         movwf   CCPR3L
+009D   3020           00440         movlw   0x20
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 11
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+009E   0092           00441         movwf   CCPR3H
+                      00442         
+009F   309F           00443         movlw   0x9F        ; set up CCP4 to PWM and on
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00A0   0097           00444         movwf   CCP4CON
+00A1   30FF           00445         movlw   0xFF
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00A2   0095           00446         movwf   CCPR4L
+00A3   30FF           00447         movlw   0xFF
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00A4   0096           00448         movwf   CCPR4H
+                      00449         
+                      00450         
+                      00451         ;-----------------
+                      00452         ; change banks
+                      00453         ;-----------------
+00A5   0020           00454         movlb   d'0'
+                      00455         ;-----------------
+                      00456         
+                      00457                 
+                      00458         ; Point FSR0 to the start of the data registers
+00A6   3000           00459         movlw   state_regs_H
+00A7   0085           00460         movwf   FSR0H 
+00A8   3030           00461         movlw   state_regs_L 
+00A9   0084           00462         movwf   FSR0L
+                      00463 
+                      00464         ; Point FSR1 to the start of the eeprom space
+00AA   3070           00465         movlw   0x70
+00AB   0087           00466         movwf   FSR1H 
+00AC   0186           00467         clrf    FSR1L
+                      00468         
+                      00469         ; loop though and copy memory over
+00AD   3010           00470         movlw   0x10
+00AE   00A0           00471         movwf   temp
+00AF                  00472 EEPROM_READ_LOOP        
+00AF   0016           00473         moviw   INDF1++
+00B0   001A           00474         movwi   INDF0++
+00B1   0BA0           00475         decfsz  temp, F
+00B2   2???           00476         goto    EEPROM_READ_LOOP        
+                      00477         
+                      00478         ; bit 0 = headlights
+                      00479         ; bit 1 = running lights
+                      00480         ; bit 2 = left turn
+                      00481         ; bit 3 = right turn
+                      00482         ; bit 4 = backup
+                      00483         ; bit 5 = stop lights
+                      00484         ; bit 6 = flashers
+                      00485 
+                      00486         ; enable ints
+00B3   30C0           00487         movlw   0xC0
+00B4   008B           00488         movwf   INTCON
+                      00489         
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 12
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00490         
+00B5                  00491 MAINLOOP
+                      00492                 
+                      00493         ; grab the current input states
+                      00494         
+00B5   3030           00495         movlw   state_regs_L 
+00B6   00A0           00496         movwf   temp
+00B7   1A0E           00497         btfsc   PORTC, 4
+00B8   1420           00498         bsf     temp, 0
+00B9   1A8E           00499         btfsc   PORTC, 5
+00BA   14A0           00500         bsf     temp, 1
+00BB   1A0C           00501         btfsc   PORTA, 4
+00BC   1520           00502         bsf     temp, 2
+00BD   1A8C           00503         btfsc   PORTA, 5
+00BE   15A0           00504         bsf     temp, 3
+                      00505         
+00BF   0820           00506         movf    temp, W
+00C0   0084           00507         movwf   FSR0L
+                      00508         
+                      00509 
+                      00510         ; fix to update the leds at power up 
+00C1   0825           00511         movf    init, W
+00C2   1D03           00512         btfss   STATUS, Z
+00C3   2???           00513         goto    NOT_INIT
+00C4   3001           00514         movlw   0x01
+00C5   00A5           00515         movwf   init
+00C6   2???           00516         goto    UPDATE_STATES
+00C7                  00517 NOT_INIT        
+                      00518 
+                      00519         
+                      00520         ; check if button is pressed
+00C7   198C           00521         btfsc   PORTA, 3                ; check if button pressed
+00C8   2???           00522         goto    button_done
+00C9   0824           00523         movf    button_bounce, W        ; check if previous button press has debounced yet
+00CA   1D03           00524         btfss   STATUS, Z 
+00CB   2???           00525         goto    button_done_pressed
+00CC   0A80           00526         incf    INDF0, F                ; increment the led state for this config
+00CD   30FF           00527         movlw   0xFF
+00CE   00A3           00528         movwf   eeprom_update           ; start/restart the timer for the EEPROM update due to led state
+                             change 
+00CF                  00529 button_done_pressed
+00CF   1524           00530         bsf     button_bounce, 2        ; start/restart the time for the button debounce
+00D0                  00531 button_done     
+                      00532         
+00D0   0821           00533         movf    last_state, W
+00D1   0600           00534         xorwf   INDF0, W
+00D2   1903           00535         btfsc   STATUS, Z
+00D3   2???           00536         goto    MAINLOOP
+                      00537 
+00D4                  00538 UPDATE_STATES   
+00D4   0800           00539         movf    INDF0, W
+00D5   00A1           00540         movwf   last_state
+                      00541         
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 13
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00542         ; turn off all leds
+00D6   138D           00543         bcf     PORTB, 7    ; flasher
+00D7   138E           00544         bcf     PORTC, 7    ; flasher
+                      00545         ;-----------------
+                      00546         ; change banks
+                      00547         ;-----------------
+00D8   0021           00548         movlb   d'01'
+                      00549         ;-----------------      
+00D9   30FF           00550         movlw   0xFF
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00DA   008C           00551         movwf   TRISA       ; 5,4,3 inputs 2 turn FL, 1 headlight R, 0 headlight L 
+00DB   307F           00552         movlw   0x7F
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00DC   008D           00553         movwf   TRISB       ; 7 flasher A, 6 stop L, 5 backup R, 4 backup L
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00DD   008E           00554         movwf   TRISC       ; 7 flasher B, 6 stop R, 5,6 inputs, 3 stop C, 2 turn RR, 1 turn RL, 0 turn 
+                            FR      
+                      00555         ;-----------------
+                      00556         ; change banks
+                      00557         ;-----------------
+00DE   0020           00558         movlb   d'00'
+                      00559         ;-----------------      
+                      00560         
+                      00561         
+00DF   1C00           00562         btfss   INDF0, 0
+00E0   2???           00563         goto    headlight_done
+                      00564         ;-----------------
+                      00565         ; change banks
+                      00566         ;-----------------
+00E1   0021           00567         movlb   d'01'
+                      00568         ;-----------------      
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00E2   100C           00569         bcf     TRISA, 0    ; headlight L
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00E3   108C           00570         bcf     TRISA, 1    ; headlight R
+                      00571         ;-----------------
+                      00572         ; change banks
+                      00573         ;-----------------
+00E4   0020           00574         movlb   d'00'
+                      00575         ;-----------------      
+00E5                  00576 headlight_done  
+                      00577 
+                      00578         
+00E5   1C80           00579         btfss   INDF0, 1
+00E6   2???           00580         goto    run_done
+                      00581         ;-----------------
+                      00582         ; change banks
+                      00583         ;-----------------
+00E7   0025           00584         movlb   d'5'
+                      00585         ;-----------------
+00E8   3020           00586         movlw   0x20        ; stop pwm channel
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00E9   0092           00587         movwf   CCPR1H
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 14
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00588         ;-----------------
+                      00589         ; change banks
+                      00590         ;-----------------
+00EA   0021           00591         movlb   d'01'
+                      00592         ;-----------------      
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00EB   110C           00593         bcf     TRISA, 2    ; turn FL
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00EC   130D           00594         bcf     TRISB, 6    ; stop L
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00ED   130E           00595         bcf     TRISC, 6    ; stop r
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00EE   110E           00596         bcf     TRISC, 2    ; turn RR
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00EF   108E           00597         bcf     TRISC, 1    ; turn RL
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00F0   100E           00598         bcf     TRISC, 0    ; turn FR
+                      00599         ;-----------------
+                      00600         ; change banks
+                      00601         ;-----------------
+00F1   0020           00602         movlb   d'00'
+                      00603         ;-----------------      
+00F2                  00604 run_done        
+                      00605         
+                      00606 
+00F2   1E00           00607         btfss   INDF0, 4
+00F3   2???           00608         goto    backup_done
+                      00609         ;-----------------
+                      00610         ; change banks
+                      00611         ;-----------------
+00F4   0021           00612         movlb   d'01'
+                      00613         ;-----------------      
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00F5   120D           00614         bcf     TRISB, 4    ; backup L
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00F6   128D           00615         bcf     TRISB, 5    ; backup r
+                      00616         ;-----------------
+                      00617         ; change banks
+                      00618         ;-----------------
+00F7   0020           00619         movlb   d'00'
+                      00620         ;-----------------      
+00F8                  00621 backup_done     
+                      00622         
+                      00623         
+                      00624         
+00F8   1E80           00625         btfss   INDF0, 5
+00F9   2???           00626         goto    stop_done
+                      00627         ;-----------------
+                      00628         ; change banks
+                      00629         ;-----------------
+00FA   0025           00630         movlb   d'5'
+                      00631         ;-----------------
+00FB   3080           00632         movlw   0x80        ; stop pwm channel
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 15
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00FC   0092           00633         movwf   CCPR1H
+                      00634         ;-----------------
+                      00635         ; change banks
+                      00636         ;-----------------
+00FD   0021           00637         movlb   d'01'
+                      00638         ;-----------------      
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00FE   130D           00639         bcf     TRISB, 6    ; stop L
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+00FF   130E           00640         bcf     TRISC, 6    ; stop r
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0100   118E           00641         bcf     TRISC, 3    ; stop c
+                      00642         ;-----------------
+                      00643         ; change banks
+                      00644         ;-----------------
+0101   0020           00645         movlb   d'00'
+                      00646         ;-----------------      
+0102                  00647 stop_done       
+                      00648 
+                      00649         
+                      00650         
+0102   2???           00651         goto    MAINLOOP
+                      00652         
+                      00653         
+                      00654 ;This major block of code is a catchall loop if things go bad just stop.
+                      00655 ;-----------------------------------------------
+0103                  00656 ENDLOOP
+0103   2???           00657         goto    ENDLOOP
+                      00658 
+                      00659 ; ---------------- Function calls ----------------------
+                      00660 
+                      00661 
+                      00662         
+0104   0050 0065 0074 00663         de  CODE_VER_STRING         ; put the description string in the ROM     
+       0065 0072 0020 
+       0053 0068 0061 
+       0062 0069 006E 
+       006F 0020 0031 
+       0035 004A 0055 
+       004C 0032 0030 
+       0031 0036 0020 
+       0054 0072 0061 
+       0069 006E 0020 
+       004C 0069 0067 
+       0068 0074 0069 
+       006E 0067 0020 
+       0056 0030 0030 
+       002E 0030 0032 
+3FEC 37D0 1FFF 3FFF   00664         end
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 16
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+ABDEN                             00000000
+ABDOVF                            00000007
+ACKDT                             00000005
+ACKEN                             00000004
+ACKSTAT                           00000006
+ACKTIM                            00000007
+ADACT                             0000009F
+ADACT0                            00000000
+ADACT1                            00000001
+ADACT2                            00000002
+ADACT3                            00000003
+ADACT4                            00000004
+ADCMD                             00000005
+ADCON0                            0000009D
+ADCON1                            0000009E
+ADCS0                             00000004
+ADCS1                             00000005
+ADCS2                             00000006
+ADD0                              00000000
+ADD1                              00000001
+ADD2                              00000002
+ADD3                              00000003
+ADD4                              00000004
+ADD5                              00000005
+ADD6                              00000006
+ADD7                              00000007
+ADDEN                             00000003
+ADFM                              00000007
+ADFVR0                            00000000
+ADFVR1                            00000001
+ADGO                              00000001
+ADIE                              00000006
+ADIF                              00000006
+ADNREF                            00000002
+ADOEN                             00000002
+ADON                              00000000
+ADOR                              00000002
+ADPREF0                           00000000
+ADPREF1                           00000001
+ADRES                             0000009B
+ADRESH                            0000009C
+ADRESL                            0000009B
+AHEN                              00000001
+ANSA0                             00000000
+ANSA1                             00000001
+ANSA2                             00000002
+ANSA4                             00000004
+ANSA5                             00000005
+ANSB4                             00000004
+ANSB5                             00000005
+ANSB6                             00000006
+ANSB7                             00000007
+ANSC0                             00000000
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 17
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+ANSC1                             00000001
+ANSC2                             00000002
+ANSC3                             00000003
+ANSC4                             00000004
+ANSC5                             00000005
+ANSC6                             00000006
+ANSC7                             00000007
+ANSELA                            0000018C
+ANSELB                            0000018D
+ANSELC                            0000018E
+AS0E                              00000000
+AS1E                              00000001
+AS2E                              00000002
+AS3E                              00000003
+AS4E                              00000004
+BAUD1CON                          0000019F
+BAUDCON                           0000019F
+BAUDCON1                          0000019F
+BAUDCTL                           0000019F
+BAUDCTL1                          0000019F
+BCL1IE                            00000002
+BCL1IF                            00000002
+BF                                00000000
+BOEN                              00000004
+BORCON                            00000116
+BORRDY                            00000000
+BRG16                             00000003
+BRGH                              00000002
+BSR                               00000008
+BSR0                              00000000
+BSR1                              00000001
+BSR2                              00000002
+BSR3                              00000003
+BSR4                              00000004
+BSR_SHAD                          00000FE6
+BUF0                              00000000
+BUF1                              00000001
+BUF2                              00000002
+BUF3                              00000003
+BUF4                              00000004
+BUF5                              00000005
+BUF6                              00000006
+BUF7                              00000007
+C                                 00000000
+C1HYS                             00000001
+C1IE                              00000005
+C1IF                              00000005
+C1INTN                            00000006
+C1INTP                            00000007
+C1NCH0                            00000000
+C1NCH1                            00000001
+C1NCH2                            00000002
+C1ON                              00000007
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 18
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+C1OUT                             00000006
+C1PCH0                            00000003
+C1PCH1                            00000004
+C1PCH2                            00000005
+C1POL                             00000004
+C1SP                              00000002
+C1SYNC                            00000000
+C1TSEL0                           00000000
+C1TSEL1                           00000001
+C2HYS                             00000001
+C2IE                              00000006
+C2IF                              00000006
+C2INTN                            00000006
+C2INTP                            00000007
+C2NCH0                            00000000
+C2NCH1                            00000001
+C2NCH2                            00000002
+C2ON                              00000007
+C2OUT                             00000006
+C2PCH0                            00000003
+C2PCH1                            00000004
+C2PCH2                            00000005
+C2POL                             00000004
+C2SP                              00000002
+C2SYNC                            00000000
+C2TSEL0                           00000002
+C2TSEL1                           00000003
+C3TSEL0                           00000004
+C3TSEL1                           00000005
+C4TSEL0                           00000006
+C4TSEL1                           00000007
+CCDCON                            0000041F
+CCDEN                             00000007
+CCDNA                             0000040C
+CCDNA0                            00000000
+CCDNA1                            00000001
+CCDNA2                            00000002
+CCDNA4                            00000004
+CCDNA5                            00000005
+CCDNB                             0000040D
+CCDNB4                            00000004
+CCDNB5                            00000005
+CCDNB6                            00000006
+CCDNB7                            00000007
+CCDNC                             0000040E
+CCDNC0                            00000000
+CCDNC1                            00000001
+CCDNC2                            00000002
+CCDNC3                            00000003
+CCDNC4                            00000004
+CCDNC5                            00000005
+CCDNC6                            00000006
+CCDNC7                            00000007
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 19
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+CCDPA                             0000048C
+CCDPA0                            00000000
+CCDPA1                            00000001
+CCDPA2                            00000002
+CCDPA4                            00000004
+CCDPA5                            00000005
+CCDPB                             0000048D
+CCDPB4                            00000004
+CCDPB5                            00000005
+CCDPB6                            00000006
+CCDPB7                            00000007
+CCDPC                             0000048E
+CCDPC0                            00000000
+CCDPC1                            00000001
+CCDPC2                            00000002
+CCDPC3                            00000003
+CCDPC4                            00000004
+CCDPC5                            00000005
+CCDPC6                            00000006
+CCDPC7                            00000007
+CCDS0                             00000000
+CCDS1                             00000001
+CCP1CAP                           00000294
+CCP1CON                           00000293
+CCP1CTS0                          00000000
+CCP1CTS1                          00000001
+CCP1CTS2                          00000002
+CCP1CTS3                          00000003
+CCP1EN                            00000007
+CCP1FMT                           00000004
+CCP1IE                            00000000
+CCP1IF                            00000000
+CCP1MD                            00000000
+CCP1MODE0                         00000000
+CCP1MODE1                         00000001
+CCP1MODE2                         00000002
+CCP1MODE3                         00000003
+CCP1OUT                           00000005
+CCP1PPS                           00000E14
+CCP1PPS0                          00000000
+CCP1PPS1                          00000001
+CCP1PPS2                          00000002
+CCP1PPS3                          00000003
+CCP1PPS4                          00000004
+CCP2CAP                           00000298
+CCP2CON                           00000297
+CCP2CTS0                          00000000
+CCP2CTS1                          00000001
+CCP2CTS2                          00000002
+CCP2CTS3                          00000003
+CCP2EN                            00000007
+CCP2FMT                           00000004
+CCP2IE                            00000001
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 20
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+CCP2IF                            00000001
+CCP2MD                            00000001
+CCP2MODE0                         00000000
+CCP2MODE1                         00000001
+CCP2MODE2                         00000002
+CCP2MODE3                         00000003
+CCP2OUT                           00000005
+CCP2PPS                           00000E15
+CCP2PPS0                          00000000
+CCP2PPS1                          00000001
+CCP2PPS2                          00000002
+CCP2PPS3                          00000003
+CCP2PPS4                          00000004
+CCP3CAP                           00000314
+CCP3CON                           00000313
+CCP3CTS0                          00000000
+CCP3CTS1                          00000001
+CCP3CTS2                          00000002
+CCP3CTS3                          00000003
+CCP3EN                            00000007
+CCP3FMT                           00000004
+CCP3IE                            00000002
+CCP3IF                            00000002
+CCP3MD                            00000002
+CCP3MODE0                         00000000
+CCP3MODE1                         00000001
+CCP3MODE2                         00000002
+CCP3MODE3                         00000003
+CCP3OUT                           00000005
+CCP3PPS                           00000E16
+CCP3PPS0                          00000000
+CCP3PPS1                          00000001
+CCP3PPS2                          00000002
+CCP3PPS3                          00000003
+CCP3PPS4                          00000004
+CCP4CAP                           00000318
+CCP4CON                           00000317
+CCP4CTS0                          00000000
+CCP4CTS1                          00000001
+CCP4CTS2                          00000002
+CCP4CTS3                          00000003
+CCP4EN                            00000007
+CCP4FMT                           00000004
+CCP4IE                            00000003
+CCP4IF                            00000003
+CCP4MD                            00000003
+CCP4MODE0                         00000000
+CCP4MODE1                         00000001
+CCP4MODE2                         00000002
+CCP4MODE3                         00000003
+CCP4OUT                           00000005
+CCP4PPS                           00000E17
+CCP4PPS0                          00000000
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 21
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+CCP4PPS1                          00000001
+CCP4PPS2                          00000002
+CCP4PPS3                          00000003
+CCP4PPS4                          00000004
+CCPR1                             00000291
+CCPR1H                            00000292
+CCPR1L                            00000291
+CCPR2                             00000295
+CCPR2H                            00000296
+CCPR2L                            00000295
+CCPR3                             00000311
+CCPR3H                            00000312
+CCPR3L                            00000311
+CCPR4                             00000315
+CCPR4H                            00000316
+CCPR4L                            00000315
+CCPTMRS                           0000029F
+CDAFVR0                           00000002
+CDAFVR1                           00000003
+CDIV0                             00000000
+CDIV1                             00000001
+CDIV2                             00000002
+CDIV3                             00000003
+CHS0                              00000002
+CHS1                              00000003
+CHS2                              00000004
+CHS3                              00000005
+CHS4                              00000006
+CHS5                              00000007
+CKE                               00000006
+CKP                               00000004
+CLC1CON                           00000F10
+CLC1GLS0                          00000F16
+CLC1GLS1                          00000F17
+CLC1GLS2                          00000F18
+CLC1GLS3                          00000F19
+CLC1IE                            00000000
+CLC1IF                            00000000
+CLC1MD                            00000001
+CLC1POL                           00000F11
+CLC1SEL0                          00000F12
+CLC1SEL1                          00000F13
+CLC1SEL2                          00000F14
+CLC1SEL3                          00000F15
+CLC2CON                           00000F1A
+CLC2GLS0                          00000F20
+CLC2GLS1                          00000F21
+CLC2GLS2                          00000F22
+CLC2GLS3                          00000F23
+CLC2IE                            00000001
+CLC2IF                            00000001
+CLC2MD                            00000002
+CLC2POL                           00000F1B
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 22
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+CLC2SEL0                          00000F1C
+CLC2SEL1                          00000F1D
+CLC2SEL2                          00000F1E
+CLC2SEL3                          00000F1F
+CLC3CON                           00000F24
+CLC3GLS0                          00000F2A
+CLC3GLS1                          00000F2B
+CLC3GLS2                          00000F2C
+CLC3GLS3                          00000F2D
+CLC3IE                            00000002
+CLC3IF                            00000002
+CLC3MD                            00000003
+CLC3POL                           00000F25
+CLC3SEL0                          00000F26
+CLC3SEL1                          00000F27
+CLC3SEL2                          00000F28
+CLC3SEL3                          00000F29
+CLC4CON                           00000F2E
+CLC4GLS0                          00000F34
+CLC4GLS1                          00000F35
+CLC4GLS2                          00000F36
+CLC4GLS3                          00000F37
+CLC4IE                            00000003
+CLC4IF                            00000003
+CLC4MD                            00000004
+CLC4POL                           00000F2F
+CLC4SEL0                          00000F30
+CLC4SEL1                          00000F31
+CLC4SEL2                          00000F32
+CLC4SEL3                          00000F33
+CLCDATA                           00000F0F
+CLCIN0PPS                         00000E28
+CLCIN0PPS0                        00000000
+CLCIN0PPS1                        00000001
+CLCIN0PPS2                        00000002
+CLCIN0PPS3                        00000003
+CLCIN0PPS4                        00000004
+CLCIN1PPS                         00000E29
+CLCIN1PPS0                        00000000
+CLCIN1PPS1                        00000001
+CLCIN1PPS2                        00000002
+CLCIN1PPS3                        00000003
+CLCIN1PPS4                        00000004
+CLCIN2PPS                         00000E2A
+CLCIN2PPS0                        00000000
+CLCIN2PPS1                        00000001
+CLCIN2PPS2                        00000002
+CLCIN2PPS3                        00000003
+CLCIN2PPS4                        00000004
+CLCIN3PPS                         00000E2B
+CLCIN3PPS0                        00000000
+CLCIN3PPS1                        00000001
+CLCIN3PPS2                        00000002
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 23
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+CLCIN3PPS3                        00000003
+CLCIN3PPS4                        00000004
+CLKRCON                           0000039A
+CLKRDC0                           00000003
+CLKRDC1                           00000004
+CLKRDIV0                          00000000
+CLKRDIV1                          00000001
+CLKRDIV2                          00000002
+CLKREN                            00000007
+CLKRMD                            00000001
+CM1CON0                           00000111
+CM1CON1                           00000112
+CM2CON0                           00000113
+CM2CON1                           00000114
+CMOUT                             00000115
+CMP1MD                            00000001
+CMP2MD                            00000002
+CODE_VER_STRING                   "Peter Shabino 15JUL2016 Train Lighting V00.02"
+COSC0                             00000004
+COSC1                             00000005
+COSC2                             00000006
+CPUDOZE                           00000918
+CREN                              00000004
+CS                                00000000
+CSRC                              00000007
+CSWHOLD                           00000007
+CSWIE                             00000006
+CSWIF                             00000006
+CWG1AS0                           00000697
+CWG1AS1                           00000698
+CWG1CLKCON                        00000691
+CWG1CON0                          00000695
+CWG1CON1                          00000696
+CWG1CS                            00000000
+CWG1DAT                           00000692
+CWG1DAT0                          00000000
+CWG1DAT1                          00000001
+CWG1DAT2                          00000002
+CWG1DAT3                          00000003
+CWG1DBF                           00000694
+CWG1DBF0                          00000000
+CWG1DBF1                          00000001
+CWG1DBF2                          00000002
+CWG1DBF3                          00000003
+CWG1DBF4                          00000004
+CWG1DBF5                          00000005
+CWG1DBR                           00000693
+CWG1DBR0                          00000000
+CWG1DBR1                          00000001
+CWG1DBR2                          00000002
+CWG1DBR3                          00000003
+CWG1DBR4                          00000004
+CWG1DBR5                          00000005
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 24
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+CWG1EN                            00000007
+CWG1IE                            00000006
+CWG1IF                            00000006
+CWG1IN                            00000005
+CWG1LD                            00000006
+CWG1LSAC0                         00000002
+CWG1LSAC1                         00000003
+CWG1LSBD0                         00000004
+CWG1LSBD1                         00000005
+CWG1MD                            00000006
+CWG1MODE0                         00000000
+CWG1MODE1                         00000001
+CWG1MODE2                         00000002
+CWG1OVRA                          00000004
+CWG1OVRB                          00000005
+CWG1OVRC                          00000006
+CWG1OVRD                          00000007
+CWG1POLA                          00000000
+CWG1POLB                          00000001
+CWG1POLC                          00000002
+CWG1POLD                          00000003
+CWG1PPS                           00000E18
+CWG1PPS0                          00000000
+CWG1PPS1                          00000001
+CWG1PPS2                          00000002
+CWG1PPS3                          00000003
+CWG1PPS4                          00000004
+CWG1REN                           00000006
+CWG1SHUTDOWN                      00000007
+CWG1STR                           00000699
+CWG1STRA                          00000000
+CWG1STRB                          00000001
+CWG1STRC                          00000002
+CWG1STRD                          00000003
+CWG2AS0                           00000717
+CWG2AS1                           00000718
+CWG2CLKCON                        00000711
+CWG2CON0                          00000715
+CWG2CON1                          00000716
+CWG2CS                            00000000
+CWG2DAT                           00000712
+CWG2DAT0                          00000000
+CWG2DAT1                          00000001
+CWG2DAT2                          00000002
+CWG2DAT3                          00000003
+CWG2DBF                           00000714
+CWG2DBF0                          00000000
+CWG2DBF1                          00000001
+CWG2DBF2                          00000002
+CWG2DBF3                          00000003
+CWG2DBF4                          00000004
+CWG2DBF5                          00000005
+CWG2DBR                           00000713
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 25
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+CWG2DBR0                          00000000
+CWG2DBR1                          00000001
+CWG2DBR2                          00000002
+CWG2DBR3                          00000003
+CWG2DBR4                          00000004
+CWG2DBR5                          00000005
+CWG2EN                            00000007
+CWG2IE                            00000007
+CWG2IF                            00000007
+CWG2IN                            00000005
+CWG2LD                            00000006
+CWG2LSAC0                         00000002
+CWG2LSAC1                         00000003
+CWG2LSBD0                         00000004
+CWG2LSBD1                         00000005
+CWG2MD                            00000007
+CWG2MODE0                         00000000
+CWG2MODE1                         00000001
+CWG2MODE2                         00000002
+CWG2OVRA                          00000004
+CWG2OVRB                          00000005
+CWG2OVRC                          00000006
+CWG2OVRD                          00000007
+CWG2POLA                          00000000
+CWG2POLB                          00000001
+CWG2POLC                          00000002
+CWG2POLD                          00000003
+CWG2PPS                           00000E19
+CWG2PPS0                          00000000
+CWG2PPS1                          00000001
+CWG2PPS2                          00000002
+CWG2PPS3                          00000003
+CWG2PPS4                          00000004
+CWG2REN                           00000006
+CWG2SHUTDOWN                      00000007
+CWG2STR                           00000719
+CWG2STRA                          00000000
+CWG2STRB                          00000001
+CWG2STRC                          00000002
+CWG2STRD                          00000003
+C_SHAD                            00000000
+D1N                               00000000
+D1S0                              00000000
+D1S1                              00000001
+D1S2                              00000002
+D1S3                              00000003
+D1S4                              00000004
+D1S5                              00000005
+D1T                               00000001
+D2N                               00000002
+D2S0                              00000000
+D2S1                              00000001
+D2S2                              00000002
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 26
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+D2S3                              00000003
+D2S4                              00000004
+D2S5                              00000005
+D2T                               00000003
+D3N                               00000004
+D3S0                              00000000
+D3S1                              00000001
+D3S2                              00000002
+D3S3                              00000003
+D3S4                              00000004
+D3S5                              00000005
+D3T                               00000005
+D4N                               00000006
+D4S0                              00000000
+D4S1                              00000001
+D4S2                              00000002
+D4S3                              00000003
+D4S4                              00000004
+D4S5                              00000005
+D4T                               00000007
+DAC1EN                            00000007
+DAC1NSS                           00000000
+DAC1OE                            00000005
+DAC1PSS0                          00000002
+DAC1PSS1                          00000003
+DAC1R0                            00000000
+DAC1R1                            00000001
+DAC1R2                            00000002
+DAC1R3                            00000003
+DAC1R4                            00000004
+DACCON0                           00000118
+DACCON1                           00000119
+DACMD                             00000006
+DBF0                              00000000
+DBF1                              00000001
+DBF2                              00000002
+DBF3                              00000003
+DBF4                              00000004
+DBF5                              00000005
+DBR0                              00000000
+DBR1                              00000001
+DBR2                              00000002
+DBR3                              00000003
+DBR4                              00000004
+DBR5                              00000005
+DC                                00000001
+DC_SHAD                           00000001
+DHEN                              00000000
+DOE                               00000004
+DOZE0                             00000000
+DOZE1                             00000001
+DOZE2                             00000002
+DOZEN                             00000006
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 27
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+DSMMD                             00000000
+D_NOT_A                           00000005
+EEPROM_NO_UPDATE                  0000002D
+EEPROM_READ_LOOP                  000000AF
+EEPROM_UPDATE                     00000012
+EN                                00000007
+ENDLOOP                           00000103
+EXTOEN                            00000007
+EXTOR                             00000007
+F                                 00000001
+FERR                              00000002
+FREE                              00000004
+FSR0                              00000004
+FSR0H                             00000005
+FSR0H_SHAD                        00000FE9
+FSR0L                             00000004
+FSR0L_SHAD                        00000FE8
+FSR1                              00000006
+FSR1H                             00000007
+FSR1H_SHAD                        00000FEB
+FSR1L                             00000006
+FSR1L_SHAD                        00000FEA
+FVRCON                            00000117
+FVREN                             00000007
+FVRMD                             00000006
+FVRRDY                            00000006
+G1EN                              00000007
+G1POL                             00000000
+G2EN                              00000007
+G2POL                             00000001
+G3POL                             00000002
+G4D1N                             00000000
+G4D1T                             00000001
+G4D2N                             00000002
+G4D2T                             00000003
+G4D3N                             00000004
+G4D3T                             00000005
+G4D4N                             00000006
+G4D4T                             00000007
+G4POL                             00000003
+GCEN                              00000007
+GIE                               00000007
+GO                                00000001
+GO_NOT_DONE                       00000001
+HFFRQ0                            00000000
+HFFRQ1                            00000001
+HFFRQ2                            00000002
+HFFRQ3                            00000003
+HFOEN                             00000006
+HFOR                              00000006
+HFTUN0                            00000000
+HFTUN1                            00000001
+HFTUN2                            00000002
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 28
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+HFTUN3                            00000003
+HFTUN4                            00000004
+HFTUN5                            00000005
+IDLEN                             00000007
+IN                                00000005
+INDF0                             00000000
+INDF1                             00000001
+INLVLA                            0000038C
+INLVLA0                           00000000
+INLVLA1                           00000001
+INLVLA2                           00000002
+INLVLA3                           00000003
+INLVLA4                           00000004
+INLVLA5                           00000005
+INLVLB                            0000038D
+INLVLB4                           00000004
+INLVLB5                           00000005
+INLVLB6                           00000006
+INLVLB7                           00000007
+INLVLC                            0000038E
+INLVLC0                           00000000
+INLVLC1                           00000001
+INLVLC2                           00000002
+INLVLC3                           00000003
+INLVLC4                           00000004
+INLVLC5                           00000005
+INLVLC6                           00000006
+INLVLC7                           00000007
+INTCON                            0000000B
+INTE                              00000000
+INTEDG                            00000000
+INTF                              00000000
+INTN                              00000003
+INTP                              00000004
+INTPPS                            00000E10
+INTPPS0                           00000000
+INTPPS1                           00000001
+INTPPS2                           00000002
+INTPPS3                           00000003
+INTPPS4                           00000004
+IOCAF                             00000393
+IOCAF0                            00000000
+IOCAF1                            00000001
+IOCAF2                            00000002
+IOCAF3                            00000003
+IOCAF4                            00000004
+IOCAF5                            00000005
+IOCAN                             00000392
+IOCAN0                            00000000
+IOCAN1                            00000001
+IOCAN2                            00000002
+IOCAN3                            00000003
+IOCAN4                            00000004
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 29
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+IOCAN5                            00000005
+IOCAP                             00000391
+IOCAP0                            00000000
+IOCAP1                            00000001
+IOCAP2                            00000002
+IOCAP3                            00000003
+IOCAP4                            00000004
+IOCAP5                            00000005
+IOCBF                             00000396
+IOCBF4                            00000004
+IOCBF5                            00000005
+IOCBF6                            00000006
+IOCBF7                            00000007
+IOCBN                             00000395
+IOCBN4                            00000004
+IOCBN5                            00000005
+IOCBN6                            00000006
+IOCBN7                            00000007
+IOCBP                             00000394
+IOCBP4                            00000004
+IOCBP5                            00000005
+IOCBP6                            00000006
+IOCBP7                            00000007
+IOCCF                             00000399
+IOCCF0                            00000000
+IOCCF1                            00000001
+IOCCF2                            00000002
+IOCCF3                            00000003
+IOCCF4                            00000004
+IOCCF5                            00000005
+IOCCF6                            00000006
+IOCCF7                            00000007
+IOCCN                             00000398
+IOCCN0                            00000000
+IOCCN1                            00000001
+IOCCN2                            00000002
+IOCCN3                            00000003
+IOCCN4                            00000004
+IOCCN5                            00000005
+IOCCN6                            00000006
+IOCCN7                            00000007
+IOCCP                             00000397
+IOCCP0                            00000000
+IOCCP1                            00000001
+IOCCP2                            00000002
+IOCCP3                            00000003
+IOCCP4                            00000004
+IOCCP5                            00000005
+IOCCP6                            00000006
+IOCCP7                            00000007
+IOCIE                             00000004
+IOCIF                             00000004
+IOCMD                             00000000
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 30
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+IRQ                               00000005
+LATA                              0000010C
+LATA0                             00000000
+LATA1                             00000001
+LATA2                             00000002
+LATA4                             00000004
+LATA5                             00000005
+LATB                              0000010D
+LATB4                             00000004
+LATB5                             00000005
+LATB6                             00000006
+LATB7                             00000007
+LATC                              0000010E
+LATC0                             00000000
+LATC1                             00000001
+LATC2                             00000002
+LATC3                             00000003
+LATC4                             00000004
+LATC5                             00000005
+LATC6                             00000006
+LATC7                             00000007
+LC1D1S0                           00000000
+LC1D1S1                           00000001
+LC1D1S2                           00000002
+LC1D1S3                           00000003
+LC1D1S4                           00000004
+LC1D1S5                           00000005
+LC1D2S0                           00000000
+LC1D2S1                           00000001
+LC1D2S2                           00000002
+LC1D2S3                           00000003
+LC1D2S4                           00000004
+LC1D2S5                           00000005
+LC1D3S0                           00000000
+LC1D3S1                           00000001
+LC1D3S2                           00000002
+LC1D3S3                           00000003
+LC1D3S4                           00000004
+LC1D3S5                           00000005
+LC1D4S0                           00000000
+LC1D4S1                           00000001
+LC1D4S2                           00000002
+LC1D4S3                           00000003
+LC1D4S4                           00000004
+LC1D4S5                           00000005
+LC1EN                             00000007
+LC1G1D1N                          00000000
+LC1G1D1T                          00000001
+LC1G1D2N                          00000002
+LC1G1D2T                          00000003
+LC1G1D3N                          00000004
+LC1G1D3T                          00000005
+LC1G1D4N                          00000006
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 31
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+LC1G1D4T                          00000007
+LC1G1POL                          00000000
+LC1G2D1N                          00000000
+LC1G2D1T                          00000001
+LC1G2D2N                          00000002
+LC1G2D2T                          00000003
+LC1G2D3N                          00000004
+LC1G2D3T                          00000005
+LC1G2D4N                          00000006
+LC1G2D4T                          00000007
+LC1G2POL                          00000001
+LC1G3D1N                          00000000
+LC1G3D1T                          00000001
+LC1G3D2N                          00000002
+LC1G3D2T                          00000003
+LC1G3D3N                          00000004
+LC1G3D3T                          00000005
+LC1G3D4N                          00000006
+LC1G3D4T                          00000007
+LC1G3POL                          00000002
+LC1G4D1N                          00000000
+LC1G4D1T                          00000001
+LC1G4D2N                          00000002
+LC1G4D2T                          00000003
+LC1G4D3N                          00000004
+LC1G4D3T                          00000005
+LC1G4D4N                          00000006
+LC1G4D4T                          00000007
+LC1G4POL                          00000003
+LC1INTN                           00000003
+LC1INTP                           00000004
+LC1MODE0                          00000000
+LC1MODE1                          00000001
+LC1MODE2                          00000002
+LC1OUT                            00000005
+LC1POL                            00000007
+LC2D1S0                           00000000
+LC2D1S1                           00000001
+LC2D1S2                           00000002
+LC2D1S3                           00000003
+LC2D1S4                           00000004
+LC2D1S5                           00000005
+LC2D2S0                           00000000
+LC2D2S1                           00000001
+LC2D2S2                           00000002
+LC2D2S3                           00000003
+LC2D2S4                           00000004
+LC2D2S5                           00000005
+LC2D3S0                           00000000
+LC2D3S1                           00000001
+LC2D3S2                           00000002
+LC2D3S3                           00000003
+LC2D3S4                           00000004
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 32
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+LC2D3S5                           00000005
+LC2D4S0                           00000000
+LC2D4S1                           00000001
+LC2D4S2                           00000002
+LC2D4S3                           00000003
+LC2D4S4                           00000004
+LC2D4S5                           00000005
+LC2EN                             00000007
+LC2G1D1N                          00000000
+LC2G1D1T                          00000001
+LC2G1D2N                          00000002
+LC2G1D2T                          00000003
+LC2G1D3N                          00000004
+LC2G1D3T                          00000005
+LC2G1D4N                          00000006
+LC2G1D4T                          00000007
+LC2G1POL                          00000000
+LC2G2D1N                          00000000
+LC2G2D1T                          00000001
+LC2G2D2N                          00000002
+LC2G2D2T                          00000003
+LC2G2D3N                          00000004
+LC2G2D3T                          00000005
+LC2G2D4N                          00000006
+LC2G2D4T                          00000007
+LC2G2POL                          00000001
+LC2G3D1N                          00000000
+LC2G3D1T                          00000001
+LC2G3D2N                          00000002
+LC2G3D2T                          00000003
+LC2G3D3N                          00000004
+LC2G3D3T                          00000005
+LC2G3D4N                          00000006
+LC2G3D4T                          00000007
+LC2G3POL                          00000002
+LC2G4D1N                          00000000
+LC2G4D1T                          00000001
+LC2G4D2N                          00000002
+LC2G4D2T                          00000003
+LC2G4D3N                          00000004
+LC2G4D3T                          00000005
+LC2G4D4N                          00000006
+LC2G4D4T                          00000007
+LC2G4POL                          00000003
+LC2INTN                           00000003
+LC2INTP                           00000004
+LC2MODE0                          00000000
+LC2MODE1                          00000001
+LC2MODE2                          00000002
+LC2OUT                            00000005
+LC2POL                            00000007
+LC3D1S0                           00000000
+LC3D1S1                           00000001
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 33
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+LC3D1S2                           00000002
+LC3D1S3                           00000003
+LC3D1S4                           00000004
+LC3D1S5                           00000005
+LC3D2S0                           00000000
+LC3D2S1                           00000001
+LC3D2S2                           00000002
+LC3D2S3                           00000003
+LC3D2S4                           00000004
+LC3D2S5                           00000005
+LC3D3S0                           00000000
+LC3D3S1                           00000001
+LC3D3S2                           00000002
+LC3D3S3                           00000003
+LC3D3S4                           00000004
+LC3D3S5                           00000005
+LC3D4S0                           00000000
+LC3D4S1                           00000001
+LC3D4S2                           00000002
+LC3D4S3                           00000003
+LC3D4S4                           00000004
+LC3D4S5                           00000005
+LC3EN                             00000007
+LC3G1D1N                          00000000
+LC3G1D1T                          00000001
+LC3G1D2N                          00000002
+LC3G1D2T                          00000003
+LC3G1D3N                          00000004
+LC3G1D3T                          00000005
+LC3G1D4N                          00000006
+LC3G1D4T                          00000007
+LC3G1POL                          00000000
+LC3G2D1N                          00000000
+LC3G2D1T                          00000001
+LC3G2D2N                          00000002
+LC3G2D2T                          00000003
+LC3G2D3N                          00000004
+LC3G2D3T                          00000005
+LC3G2D4N                          00000006
+LC3G2D4T                          00000007
+LC3G2POL                          00000001
+LC3G3D1N                          00000000
+LC3G3D1T                          00000001
+LC3G3D2N                          00000002
+LC3G3D2T                          00000003
+LC3G3D3N                          00000004
+LC3G3D3T                          00000005
+LC3G3D4N                          00000006
+LC3G3D4T                          00000007
+LC3G3POL                          00000002
+LC3G4D1N                          00000000
+LC3G4D1T                          00000001
+LC3G4D2N                          00000002
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 34
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+LC3G4D2T                          00000003
+LC3G4D3N                          00000004
+LC3G4D3T                          00000005
+LC3G4D4N                          00000006
+LC3G4D4T                          00000007
+LC3G4POL                          00000003
+LC3INTN                           00000003
+LC3INTP                           00000004
+LC3MODE0                          00000000
+LC3MODE1                          00000001
+LC3MODE2                          00000002
+LC3OUT                            00000005
+LC3POL                            00000007
+LC4D1S0                           00000000
+LC4D1S1                           00000001
+LC4D1S2                           00000002
+LC4D1S3                           00000003
+LC4D1S4                           00000004
+LC4D1S5                           00000005
+LC4D2S0                           00000000
+LC4D2S1                           00000001
+LC4D2S2                           00000002
+LC4D2S3                           00000003
+LC4D2S4                           00000004
+LC4D2S5                           00000005
+LC4D3S0                           00000000
+LC4D3S1                           00000001
+LC4D3S2                           00000002
+LC4D3S3                           00000003
+LC4D3S4                           00000004
+LC4D3S5                           00000005
+LC4D4S0                           00000000
+LC4D4S1                           00000001
+LC4D4S2                           00000002
+LC4D4S3                           00000003
+LC4D4S4                           00000004
+LC4D4S5                           00000005
+LC4EN                             00000007
+LC4G1D1N                          00000000
+LC4G1D1T                          00000001
+LC4G1D2N                          00000002
+LC4G1D2T                          00000003
+LC4G1D3N                          00000004
+LC4G1D3T                          00000005
+LC4G1D4N                          00000006
+LC4G1D4T                          00000007
+LC4G1POL                          00000000
+LC4G2D1N                          00000000
+LC4G2D1T                          00000001
+LC4G2D2N                          00000002
+LC4G2D2T                          00000003
+LC4G2D3N                          00000004
+LC4G2D3T                          00000005
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 35
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+LC4G2D4N                          00000006
+LC4G2D4T                          00000007
+LC4G2POL                          00000001
+LC4G3D1N                          00000000
+LC4G3D1T                          00000001
+LC4G3D2N                          00000002
+LC4G3D2T                          00000003
+LC4G3D3N                          00000004
+LC4G3D3T                          00000005
+LC4G3D4N                          00000006
+LC4G3D4T                          00000007
+LC4G3POL                          00000002
+LC4G4D1N                          00000000
+LC4G4D1T                          00000001
+LC4G4D2N                          00000002
+LC4G4D2T                          00000003
+LC4G4D3N                          00000004
+LC4G4D3T                          00000005
+LC4G4D4N                          00000006
+LC4G4D4T                          00000007
+LC4G4POL                          00000003
+LC4INTN                           00000003
+LC4INTP                           00000004
+LC4MODE0                          00000000
+LC4MODE1                          00000001
+LC4MODE2                          00000002
+LC4OUT                            00000005
+LC4POL                            00000007
+LD                                00000006
+LFOEN                             00000004
+LFOR                              00000004
+LSAC0                             00000002
+LSAC1                             00000003
+LSBD0                             00000004
+LSBD1                             00000005
+LWLO                              00000005
+MAINLOOP                          000000B5
+MC1OUT                            00000000
+MC2OUT                            00000001
+MDBIT                             00000000
+MDCARH                            0000039E
+MDCARL                            0000039F
+MDCH0                             00000000
+MDCH1                             00000001
+MDCH2                             00000002
+MDCH3                             00000003
+MDCHPOL                           00000006
+MDCHSYNC                          00000005
+MDCIN1PPS                         00000E1A
+MDCIN1PPS0                        00000000
+MDCIN1PPS1                        00000001
+MDCIN1PPS2                        00000002
+MDCIN1PPS3                        00000003
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 36
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+MDCIN1PPS4                        00000004
+MDCIN2PPS                         00000E1B
+MDCIN2PPS0                        00000000
+MDCIN2PPS1                        00000001
+MDCIN2PPS2                        00000002
+MDCIN2PPS3                        00000003
+MDCIN2PPS4                        00000004
+MDCL0                             00000000
+MDCL1                             00000001
+MDCL2                             00000002
+MDCL3                             00000003
+MDCLPOL                           00000006
+MDCLSYNC                          00000005
+MDCON                             0000039C
+MDEN                              00000007
+MDMINPPS                          00000E1C
+MDMINPPS0                         00000000
+MDMINPPS1                         00000001
+MDMINPPS2                         00000002
+MDMINPPS3                         00000003
+MDMINPPS4                         00000004
+MDMS0                             00000000
+MDMS1                             00000001
+MDMS2                             00000002
+MDMS3                             00000003
+MDOPOL                            00000004
+MDOUT                             00000003
+MDSRC                             0000039D
+MLC1OUT                           00000000
+MLC2OUT                           00000001
+MLC3OUT                           00000002
+MLC4OUT                           00000003
+MODE0                             00000000
+MODE1                             00000001
+MODE2                             00000002
+MSK0                              00000000
+MSK1                              00000001
+MSK2                              00000002
+MSK3                              00000003
+MSK4                              00000004
+MSK5                              00000005
+MSK6                              00000006
+MSK7                              00000007
+MSSP1MD                           00000001
+N1EN                              00000007
+N1OUT                             00000005
+N1PFM                             00000000
+N1POL                             00000004
+NCO1ACC                           00000498
+NCO1ACCH                          00000499
+NCO1ACCL                          00000498
+NCO1ACCU                          0000049A
+NCO1CLK                           0000049F
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 37
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+NCO1CON                           0000049E
+NCO1IE                            00000000
+NCO1IF                            00000000
+NCO1INC                           0000049B
+NCO1INCH                          0000049C
+NCO1INCL                          0000049B
+NCO1INCU                          0000049D
+NCOMD                             00000007
+NDIV0                             00000000
+NDIV1                             00000001
+NDIV2                             00000002
+NDIV3                             00000003
+NOSC0                             00000004
+NOSC1                             00000005
+NOSC2                             00000006
+NOSCR                             00000003
+NOT_BOR                           00000000
+NOT_INIT                          000000C7
+NOT_PD                            00000003
+NOT_POR                           00000001
+NOT_RI                            00000002
+NOT_RMCLR                         00000003
+NOT_RWDT                          00000004
+NOT_TO                            00000004
+NVMADR                            00000891
+NVMADR0                           00000000
+NVMADR1                           00000001
+NVMADR10                          00000002
+NVMADR11                          00000003
+NVMADR12                          00000004
+NVMADR13                          00000005
+NVMADR14                          00000006
+NVMADR2                           00000002
+NVMADR3                           00000003
+NVMADR4                           00000004
+NVMADR5                           00000005
+NVMADR6                           00000006
+NVMADR7                           00000007
+NVMADR8                           00000000
+NVMADR9                           00000001
+NVMADRH                           00000892
+NVMADRL                           00000891
+NVMCON1                           00000895
+NVMCON2                           00000896
+NVMDAT                            00000893
+NVMDAT0                           00000000
+NVMDAT1                           00000001
+NVMDAT10                          00000002
+NVMDAT11                          00000003
+NVMDAT12                          00000004
+NVMDAT13                          00000005
+NVMDAT2                           00000002
+NVMDAT3                           00000003
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 38
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+NVMDAT4                           00000004
+NVMDAT5                           00000005
+NVMDAT6                           00000006
+NVMDAT7                           00000007
+NVMDAT8                           00000000
+NVMDAT9                           00000001
+NVMDATH                           00000894
+NVMDATL                           00000893
+NVMIE                             00000004
+NVMIF                             00000004
+NVMMD                             00000002
+NVMREGS                           00000006
+ODCA0                             00000000
+ODCA1                             00000001
+ODCA2                             00000002
+ODCA4                             00000004
+ODCA5                             00000005
+ODCB4                             00000004
+ODCB5                             00000005
+ODCB6                             00000006
+ODCB7                             00000007
+ODCC0                             00000000
+ODCC1                             00000001
+ODCC2                             00000002
+ODCC3                             00000003
+ODCC4                             00000004
+ODCC5                             00000005
+ODCC6                             00000006
+ODCC7                             00000007
+ODCONA                            0000028C
+ODCONB                            0000028D
+ODCONC                            0000028E
+OERR                              00000001
+ORDY                              00000004
+OSCCON1                           00000919
+OSCCON2                           0000091A
+OSCCON3                           0000091B
+OSCEN                             0000091D
+OSCFRQ                            0000091F
+OSCSTAT1                          0000091C
+OSCTUNE                           0000091E
+OSFIE                             00000007
+OSFIF                             00000007
+OUT                               00000005
+OVRA                              00000004
+OVRB                              00000005
+OVRC                              00000006
+OVRD                              00000007
+P                                 00000004
+P5TSEL0                           00000000
+P5TSEL1                           00000001
+P6TSEL0                           00000002
+P6TSEL1                           00000003
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 39
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+PCIE                              00000006
+PCL                               00000002
+PCLATH                            0000000A
+PCLATH_SHAD                       00000FE7
+PCON0                             0000089B
+PEIE                              00000006
+PEN                               00000002
+PIE0                              00000090
+PIE1                              00000091
+PIE2                              00000092
+PIE3                              00000093
+PIE4                              00000094
+PIR0                              00000010
+PIR1                              00000011
+PIR2                              00000012
+PIR3                              00000013
+PIR4                              00000014
+PLLR                              00000000
+PMD0                              00000911
+PMD1                              00000912
+PMD2                              00000913
+PMD3                              00000914
+PMD4                              00000915
+PMD5                              00000916
+POL                               00000007
+POLA                              00000000
+POLB                              00000001
+POLC                              00000002
+POLD                              00000003
+PORTA                             0000000C
+PORTB                             0000000D
+PORTC                             0000000E
+PPSLOCK                           00000E0F
+PPSLOCKED                         00000000
+PR2                               0000001E
+PR4                               00000416
+PR6                               0000041D
+PWM5CON                           00000619
+PWM5CON0                          00000619
+PWM5DCH                           00000618
+PWM5DCH0                          00000000
+PWM5DCH1                          00000001
+PWM5DCH2                          00000002
+PWM5DCH3                          00000003
+PWM5DCH4                          00000004
+PWM5DCH5                          00000005
+PWM5DCH6                          00000006
+PWM5DCH7                          00000007
+PWM5DCL                           00000617
+PWM5DCL0                          00000006
+PWM5DCL1                          00000007
+PWM5EN                            00000007
+PWM5MD                            00000004
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 40
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+PWM5OUT                           00000005
+PWM5POL                           00000004
+PWM6CON                           0000061C
+PWM6CON0                          0000061C
+PWM6DCH                           0000061B
+PWM6DCH0                          00000000
+PWM6DCH1                          00000001
+PWM6DCH2                          00000002
+PWM6DCH3                          00000003
+PWM6DCH4                          00000004
+PWM6DCH5                          00000005
+PWM6DCH6                          00000006
+PWM6DCH7                          00000007
+PWM6DCL                           0000061A
+PWM6DCL0                          00000006
+PWM6DCL1                          00000007
+PWM6EN                            00000007
+PWM6MD                            00000005
+PWM6OUT                           00000005
+PWM6POL                           00000004
+PWMTMRS                           0000061F
+RA0                               00000000
+RA0PPS                            00000E90
+RA0PPS0                           00000000
+RA0PPS1                           00000001
+RA0PPS2                           00000002
+RA0PPS3                           00000003
+RA0PPS4                           00000004
+RA1                               00000001
+RA1PPS                            00000E91
+RA1PPS0                           00000000
+RA1PPS1                           00000001
+RA1PPS2                           00000002
+RA1PPS3                           00000003
+RA1PPS4                           00000004
+RA2                               00000002
+RA2PPS                            00000E92
+RA2PPS0                           00000000
+RA2PPS1                           00000001
+RA2PPS2                           00000002
+RA2PPS3                           00000003
+RA2PPS4                           00000004
+RA3                               00000003
+RA4                               00000004
+RA4PPS                            00000E94
+RA4PPS0                           00000000
+RA4PPS1                           00000001
+RA4PPS2                           00000002
+RA4PPS3                           00000003
+RA4PPS4                           00000004
+RA5                               00000005
+RA5PPS                            00000E95
+RA5PPS0                           00000000
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 41
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+RA5PPS1                           00000001
+RA5PPS2                           00000002
+RA5PPS3                           00000003
+RA5PPS4                           00000004
+RB4                               00000004
+RB4PPS                            00000E9C
+RB4PPS0                           00000000
+RB4PPS1                           00000001
+RB4PPS2                           00000002
+RB4PPS3                           00000003
+RB4PPS4                           00000004
+RB5                               00000005
+RB5PPS                            00000E9D
+RB5PPS0                           00000000
+RB5PPS1                           00000001
+RB5PPS2                           00000002
+RB5PPS3                           00000003
+RB5PPS4                           00000004
+RB6                               00000006
+RB6PPS                            00000E9E
+RB6PPS0                           00000000
+RB6PPS1                           00000001
+RB6PPS2                           00000002
+RB6PPS3                           00000003
+RB6PPS4                           00000004
+RB7                               00000007
+RB7PPS                            00000E9F
+RB7PPS0                           00000000
+RB7PPS1                           00000001
+RB7PPS2                           00000002
+RB7PPS3                           00000003
+RB7PPS4                           00000004
+RC0                               00000000
+RC0PPS                            00000EA0
+RC0PPS0                           00000000
+RC0PPS1                           00000001
+RC0PPS2                           00000002
+RC0PPS3                           00000003
+RC0PPS4                           00000004
+RC1                               00000001
+RC1PPS                            00000EA1
+RC1PPS0                           00000000
+RC1PPS1                           00000001
+RC1PPS2                           00000002
+RC1PPS3                           00000003
+RC1PPS4                           00000004
+RC1REG                            00000199
+RC1STA                            0000019D
+RC2                               00000002
+RC2PPS                            00000EA2
+RC2PPS0                           00000000
+RC2PPS1                           00000001
+RC2PPS2                           00000002
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 42
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+RC2PPS3                           00000003
+RC2PPS4                           00000004
+RC3                               00000003
+RC3PPS                            00000EA3
+RC3PPS0                           00000000
+RC3PPS1                           00000001
+RC3PPS2                           00000002
+RC3PPS3                           00000003
+RC3PPS4                           00000004
+RC4                               00000004
+RC4PPS                            00000EA4
+RC4PPS0                           00000000
+RC4PPS1                           00000001
+RC4PPS2                           00000002
+RC4PPS3                           00000003
+RC4PPS4                           00000004
+RC5                               00000005
+RC5PPS                            00000EA5
+RC5PPS0                           00000000
+RC5PPS1                           00000001
+RC5PPS2                           00000002
+RC5PPS3                           00000003
+RC5PPS4                           00000004
+RC6                               00000006
+RC6PPS                            00000EA6
+RC6PPS0                           00000000
+RC6PPS1                           00000001
+RC6PPS2                           00000002
+RC6PPS3                           00000003
+RC6PPS4                           00000004
+RC7                               00000007
+RC7PPS                            00000EA7
+RC7PPS0                           00000000
+RC7PPS1                           00000001
+RC7PPS2                           00000002
+RC7PPS3                           00000003
+RC7PPS4                           00000004
+RCEN                              00000003
+RCIDL                             00000006
+RCIE                              00000005
+RCIF                              00000005
+RCREG                             00000199
+RCREG1                            00000199
+RCSTA                             0000019D
+RCSTA1                            0000019D
+RD                                00000000
+REN                               00000006
+ROI                               00000005
+RSEN                              00000001
+RX9                               00000006
+RX9D                              00000000
+RXDTPPS0                          00000000
+RXDTPPS1                          00000001
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 43
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+RXDTPPS2                          00000002
+RXDTPPS3                          00000003
+RXDTPPS4                          00000004
+RXPPS                             00000E24
+R_NOT_W                           00000002
+S                                 00000003
+SBCDE                             00000002
+SBOREN                            00000007
+SCIE                              00000005
+SCKP                              00000004
+SDAHT                             00000003
+SEN                               00000000
+SENDB                             00000003
+SHUTDOWN                          00000007
+SLRA0                             00000000
+SLRA1                             00000001
+SLRA2                             00000002
+SLRA4                             00000004
+SLRA5                             00000005
+SLRB4                             00000004
+SLRB5                             00000005
+SLRB6                             00000006
+SLRB7                             00000007
+SLRC0                             00000000
+SLRC1                             00000001
+SLRC2                             00000002
+SLRC3                             00000003
+SLRC4                             00000004
+SLRC5                             00000005
+SLRC6                             00000006
+SLRC7                             00000007
+SLRCONA                           0000030C
+SLRCONB                           0000030D
+SLRCONC                           0000030E
+SMP                               00000007
+SOR                               00000003
+SOSCBE                            00000005
+SOSCEN                            00000003
+SOSCPWR                           00000006
+SP1BRG                            0000019B
+SP1BRGH                           0000019C
+SP1BRGL                           0000019B
+SPBRG                             0000019B
+SPBRG1                            0000019B
+SPBRGH                            0000019C
+SPBRGH1                           0000019C
+SPBRGL                            0000019B
+SPEN                              00000007
+SREN                              00000005
+SSP1ADD                           00000212
+SSP1ADD0                          00000000
+SSP1ADD1                          00000001
+SSP1ADD2                          00000002
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 44
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+SSP1ADD3                          00000003
+SSP1ADD4                          00000004
+SSP1ADD5                          00000005
+SSP1ADD6                          00000006
+SSP1ADD7                          00000007
+SSP1BUF                           00000211
+SSP1BUF0                          00000000
+SSP1BUF1                          00000001
+SSP1BUF2                          00000002
+SSP1BUF3                          00000003
+SSP1BUF4                          00000004
+SSP1BUF5                          00000005
+SSP1BUF6                          00000006
+SSP1BUF7                          00000007
+SSP1CLKPPS                        00000E20
+SSP1CLKPPS0                       00000000
+SSP1CLKPPS1                       00000001
+SSP1CLKPPS2                       00000002
+SSP1CLKPPS3                       00000003
+SSP1CLKPPS4                       00000004
+SSP1CON                           00000215
+SSP1CON1                          00000215
+SSP1CON2                          00000216
+SSP1CON3                          00000217
+SSP1DATPPS                        00000E21
+SSP1DATPPS0                       00000000
+SSP1DATPPS1                       00000001
+SSP1DATPPS2                       00000002
+SSP1DATPPS3                       00000003
+SSP1DATPPS4                       00000004
+SSP1IE                            00000003
+SSP1IF                            00000003
+SSP1MSK                           00000213
+SSP1MSK0                          00000000
+SSP1MSK1                          00000001
+SSP1MSK2                          00000002
+SSP1MSK3                          00000003
+SSP1MSK4                          00000004
+SSP1MSK5                          00000005
+SSP1MSK6                          00000006
+SSP1MSK7                          00000007
+SSP1SSPPS                         00000E22
+SSP1SSPPS0                        00000000
+SSP1SSPPS1                        00000001
+SSP1SSPPS2                        00000002
+SSP1SSPPS3                        00000003
+SSP1SSPPS4                        00000004
+SSP1STAT                          00000214
+SSPADD                            00000212
+SSPBUF                            00000211
+SSPCON                            00000215
+SSPCON1                           00000215
+SSPCON2                           00000216
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 45
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+SSPCON3                           00000217
+SSPEN                             00000005
+SSPM0                             00000000
+SSPM1                             00000001
+SSPM2                             00000002
+SSPM3                             00000003
+SSPMSK                            00000213
+SSPOV                             00000006
+SSPSTAT                           00000214
+START                             00000053
+STATUS                            00000003
+STATUS_SHAD                       00000FE4
+STKOVF                            00000007
+STKPTR                            00000FED
+STKUNF                            00000006
+STRA                              00000000
+STRB                              00000001
+STRC                              00000002
+STRD                              00000003
+SWDTEN                            00000000
+SYNC                              00000004
+SYSCMD                            00000007
+T016BIT                           00000004
+T0ASYNC                           00000004
+T0CKIPPS                          00000E11
+T0CKIPPS0                         00000000
+T0CKIPPS1                         00000001
+T0CKIPPS2                         00000002
+T0CKIPPS3                         00000003
+T0CKIPPS4                         00000004
+T0CKPS0                           00000000
+T0CKPS1                           00000001
+T0CKPS2                           00000002
+T0CKPS3                           00000003
+T0CON0                            00000017
+T0CON1                            00000018
+T0CS0                             00000005
+T0CS1                             00000006
+T0CS2                             00000007
+T0EN                              00000007
+T0OUT                             00000005
+T0OUTPS0                          00000000
+T0OUTPS1                          00000001
+T0OUTPS2                          00000002
+T0OUTPS3                          00000003
+T1CKIPPS                          00000E12
+T1CKIPPS0                         00000000
+T1CKIPPS1                         00000001
+T1CKIPPS2                         00000002
+T1CKIPPS3                         00000003
+T1CKIPPS4                         00000004
+T1CKPS0                           00000004
+T1CKPS1                           00000005
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 46
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+T1CON                             0000001B
+T1GCON                            0000001C
+T1GGO_NOT_DONE                    00000003
+T1GPOL                            00000006
+T1GPPS                            00000E13
+T1GPPS0                           00000000
+T1GPPS1                           00000001
+T1GPPS2                           00000002
+T1GPPS3                           00000003
+T1GPPS4                           00000004
+T1GSPM                            00000004
+T1GSS0                            00000000
+T1GSS1                            00000001
+T1GTM                             00000005
+T1GVAL                            00000002
+T1SOSC                            00000003
+T1SYNC                            00000002
+T2CKPS0                           00000000
+T2CKPS1                           00000001
+T2CON                             0000001F
+T2OUTPS0                          00000003
+T2OUTPS1                          00000004
+T2OUTPS2                          00000005
+T2OUTPS3                          00000006
+T3CKIPPS                          00000E2C
+T3CKPS0                           00000004
+T3CKPS1                           00000005
+T3CON                             00000413
+T3GCON                            00000414
+T3GGO_NOT_DONE                    00000003
+T3GPOL                            00000006
+T3GPPS                            00000E2D
+T3GSPM                            00000004
+T3GSS0                            00000000
+T3GSS1                            00000001
+T3GTM                             00000005
+T3GVAL                            00000002
+T3SOSC                            00000003
+T3SYNC                            00000002
+T4CKPS0                           00000000
+T4CKPS1                           00000001
+T4CON                             00000417
+T4OUTPS0                          00000003
+T4OUTPS1                          00000004
+T4OUTPS2                          00000005
+T4OUTPS3                          00000006
+T5CKIPPS                          00000E2E
+T5CKPS0                           00000004
+T5CKPS1                           00000005
+T5CON                             0000041A
+T5GCON                            0000041B
+T5GGO_NOT_DONE                    00000003
+T5GPOL                            00000006
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 47
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+T5GPPS                            00000E2F
+T5GSPM                            00000004
+T5GSS0                            00000000
+T5GSS1                            00000001
+T5GTM                             00000005
+T5GVAL                            00000002
+T5SOSC                            00000003
+T5SYNC                            00000002
+T6CKPS0                           00000000
+T6CKPS1                           00000001
+T6CON                             0000041E
+T6OUTPS0                          00000003
+T6OUTPS1                          00000004
+T6OUTPS2                          00000005
+T6OUTPS3                          00000006
+TMR00                             00000000
+TMR01                             00000001
+TMR010                            00000002
+TMR011                            00000003
+TMR012                            00000004
+TMR013                            00000005
+TMR014                            00000006
+TMR015                            00000007
+TMR02                             00000002
+TMR03                             00000003
+TMR04                             00000004
+TMR05                             00000005
+TMR06                             00000006
+TMR07                             00000007
+TMR08                             00000000
+TMR09                             00000001
+TMR0H                             00000016
+TMR0IE                            00000005
+TMR0IF                            00000005
+TMR0L                             00000015
+TMR0MD                            00000000
+TMR1                              00000019
+TMR1CS0                           00000006
+TMR1CS1                           00000007
+TMR1GE                            00000007
+TMR1GIE                           00000007
+TMR1GIF                           00000007
+TMR1H                             0000001A
+TMR1IE                            00000000
+TMR1IF                            00000000
+TMR1L                             00000019
+TMR1MD                            00000001
+TMR1ON                            00000000
+TMR2                              0000001D
+TMR2IE                            00000001
+TMR2IF                            00000001
+TMR2MD                            00000002
+TMR2ON                            00000002
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 48
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+TMR3                              00000411
+TMR3CS0                           00000006
+TMR3CS1                           00000007
+TMR3GE                            00000007
+TMR3GIE                           00000005
+TMR3GIF                           00000005
+TMR3H                             00000412
+TMR3IE                            00000004
+TMR3IF                            00000004
+TMR3L                             00000411
+TMR3MD                            00000003
+TMR3ON                            00000000
+TMR4                              00000415
+TMR4IE                            00000001
+TMR4IF                            00000001
+TMR4MD                            00000004
+TMR4ON                            00000002
+TMR5                              00000418
+TMR5CS0                           00000006
+TMR5CS1                           00000007
+TMR5GE                            00000007
+TMR5GIE                           00000005
+TMR5GIF                           00000005
+TMR5H                             00000419
+TMR5IE                            00000004
+TMR5IF                            00000004
+TMR5L                             00000418
+TMR5MD                            00000005
+TMR5ON                            00000000
+TMR6                              0000041C
+TMR6IE                            00000007
+TMR6IF                            00000007
+TMR6MD                            00000006
+TMR6ON                            00000002
+TOSH                              00000FEF
+TOSL                              00000FEE
+TRISA                             0000008C
+TRISA0                            00000000
+TRISA1                            00000001
+TRISA2                            00000002
+TRISA4                            00000004
+TRISA5                            00000005
+TRISB                             0000008D
+TRISB4                            00000004
+TRISB5                            00000005
+TRISB6                            00000006
+TRISB7                            00000007
+TRISC                             0000008E
+TRISC0                            00000000
+TRISC1                            00000001
+TRISC2                            00000002
+TRISC3                            00000003
+TRISC4                            00000004
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 49
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+TRISC5                            00000005
+TRISC6                            00000006
+TRISC7                            00000007
+TRMT                              00000001
+TSEN                              00000005
+TSRNG                             00000004
+TX1REG                            0000019A
+TX1STA                            0000019E
+TX9                               00000006
+TX9D                              00000000
+TXCKPPS0                          00000000
+TXCKPPS1                          00000001
+TXCKPPS2                          00000002
+TXCKPPS3                          00000003
+TXCKPPS4                          00000004
+TXEN                              00000005
+TXIE                              00000004
+TXIF                              00000004
+TXPPS                             00000E25
+TXREG                             0000019A
+TXREG1                            0000019A
+TXSTA                             0000019E
+TXSTA1                            0000019E
+UA                                00000001
+UART1MD                           00000005
+UPDATE_STATES                     000000D4
+VREGCON                           00000197
+VREGPM                            00000001
+VerHigh                           00000000
+VerLow                            00000002
+W                                 00000000
+WCOL                              00000007
+WDTCON                            00000097
+WDTPS0                            00000001
+WDTPS1                            00000002
+WDTPS2                            00000003
+WDTPS3                            00000004
+WDTPS4                            00000005
+WPUA                              0000020C
+WPUA0                             00000000
+WPUA1                             00000001
+WPUA2                             00000002
+WPUA3                             00000003
+WPUA4                             00000004
+WPUA5                             00000005
+WPUB                              0000020D
+WPUB4                             00000004
+WPUB5                             00000005
+WPUB6                             00000006
+WPUB7                             00000007
+WPUC                              0000020E
+WPUC0                             00000000
+WPUC1                             00000001
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 50
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+WPUC2                             00000002
+WPUC3                             00000003
+WPUC4                             00000004
+WPUC5                             00000005
+WPUC6                             00000006
+WPUC7                             00000007
+WR                                00000001
+WREG                              00000009
+WREG_SHAD                         00000FE5
+WREN                              00000002
+WRERR                             00000003
+WRITE_EEPROM_DATA_LOOP            0000001C
+WRITE_EEPROM_LOOP                 00000025
+WUE                               00000001
+Z                                 00000002
+Z_SHAD                            00000002
+_BOREN_OFF                        00003F3F
+_BOREN_ON                         00003FFF
+_BOREN_SBOREN                     00003F7F
+_BOREN_SLEEP                      00003FBF
+_BORV_HIGH                        00003DFF
+_BORV_LOW                         00003FFF
+_CLKOUTEN_OFF                     00003FFF
+_CLKOUTEN_ON                      00003EFF
+_CONFIG1                          00008007
+_CONFIG2                          00008008
+_CONFIG3                          00008009
+_CONFIG4                          0000800A
+_CPD_OFF                          00003FFF
+_CPD_ON                           00003FFD
+_CP_OFF                           00003FFF
+_CP_ON                            00003FFE
+_CSWEN_OFF                        000037FF
+_CSWEN_ON                         00003FFF
+_DEBUG_OFF                        00003FFF
+_DEBUG_ON                         00001FFF
+_DEVID1                           00008006
+_FCMEN_OFF                        00001FFF
+_FCMEN_ON                         00003FFF
+_FEXTOSC_ECH                      00003FFF
+_FEXTOSC_ECL                      00003FFD
+_FEXTOSC_ECM                      00003FFE
+_FEXTOSC_HS                       00003FFA
+_FEXTOSC_LP                       00003FF8
+_FEXTOSC_OFF                      00003FFC
+_FEXTOSC_XT                       00003FF9
+_IDLOC0                           00008000
+_IDLOC1                           00008001
+_IDLOC2                           00008002
+_IDLOC3                           00008003
+_LPBOREN_OFF                      00003FFF
+_LPBOREN_ON                       00003FDF
+_LVP_OFF                          00001FFF
+MPASM 5.68                TRAIN_LIGHTING.ASM   7-20-2016  22:49:52         PAGE 51
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+_LVP_ON                           00003FFF
+_MCLRE_OFF                        00003FFE
+_MCLRE_ON                         00003FFF
+_PPS1WAY_OFF                      000037FF
+_PPS1WAY_ON                       00003FFF
+_PWRTE_OFF                        00003FFF
+_PWRTE_ON                         00003FFD
+_RSTOSC_EXT1X                     00003FFF
+_RSTOSC_EXT4X                     00003F9F
+_RSTOSC_HFINT1                    00003FEF
+_RSTOSC_HFINT32                   00003F8F
+_RSTOSC_LFINT                     00003FCF
+_RSTOSC_SOSC                      00003FBF
+_STVREN_OFF                       00002FFF
+_STVREN_ON                        00003FFF
+_WDTE_OFF                         00003FF3
+_WDTE_ON                          00003FFF
+_WDTE_SLEEP                       00003FFB
+_WDTE_SWDTEN                      00003FF7
+_WRT_ALL                          00003FFC
+_WRT_BOOT                         00003FFE
+_WRT_HALF                         00003FFD
+_WRT_OFF                          00003FFF
+__16F18344                        00000001
+backup_done                       000000F8
+blink_count                       00000022
+button_bounce                     00000024
+button_done                       000000D0
+button_done_pressed               000000CF
+eeprom_update                     00000023
+flasher_irq_2                     00000050
+flashers_irq_done                 00000052
+flashers_left_irq_done            0000003A
+flashers_left_irq_other           00000036
+flashers_right_irq_done           00000047
+flashers_right_irq_other          00000043
+global_temp                       00000070
+headlight_done                    000000E5
+init                              00000025
+last_state                        00000021
+run_done                          000000F2
+state_regs_H                      00000000
+state_regs_L                      00000030
+stop_done                         00000102
+temp                              00000020
+
+Errors   :     0
+Warnings :     0 reported,     0 suppressed
+Messages :    67 reported,     0 suppressed
+
+
