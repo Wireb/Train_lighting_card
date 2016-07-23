@@ -28,4 +28,4 @@ Currently there are 7 selectable states:
 * reverse lights
 * light bar flashers 
 
-via the programing button any state, combination of states, or none can be chosen for each of the 16 combinations of inputs. 
+Via the programing button any state, combination of states, or none can be chosen for each of the 16 combinations of the 4 inputs. 
